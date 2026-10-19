@@ -8,8 +8,8 @@
 //  NSExtensionPrincipalClass in Info.plist as
 //  `$(PRODUCT_MODULE_NAME).AppexSaverMinimalExtension`.
 //
-//  Following Apple's own screensavers (e.g. Arabesque.appex) we keep this
-//  minimal — only implement init() and let the framework drive lifecycle.
+//  Following Apple's own screensavers (e.g. Arabesque.appex), this class stays
+//  minimal: it implements only init() and lets the framework drive the lifecycle.
 //
 
 import Foundation
@@ -23,6 +23,13 @@ class AppexSaverMinimalExtension: ScreenSaverExtension {
     @objc override init() {
         logger.info("AppexSaverMinimalExtension.init() PID=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)")
         super.init()
+        // When several copies of the extension are registered with pluginkit
+        // (an old build in /Applications and a new one in DerivedData), the
+        // system may load the one you did not expect. This path tells which.
+        logger.info("loaded from \(Bundle(for: type(of: self)).bundlePath, privacy: .public)")
+        #if DEBUG
+        AppexDiagnostics.runOnce()
+        #endif
     }
 
     deinit {

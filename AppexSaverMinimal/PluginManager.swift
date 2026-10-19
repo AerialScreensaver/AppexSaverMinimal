@@ -27,7 +27,9 @@ class PluginManager: ObservableObject {
 
     private let bundleIdentifier = "net.aerialscreensaver.AppexSaverMinimal.Extension"
     private let paperSaver = PaperSaver()
-    private let screensaverDisplayName = "AppexSaverMinimalExtension"
+    /// PaperSaver identifies an app-extension screensaver by the `.appex` file
+    /// stem (the extension target's PRODUCT_NAME), not by CFBundleDisplayName.
+    private let paperSaverModuleName = "AppexSaverMinimalExtension"
 
     /// Path to the embedded extension in the app bundle.
     var embeddedExtensionPath: String? {
@@ -75,8 +77,8 @@ class PluginManager: ObservableObject {
         }
     }
 
-    /// Query pluginkit for our extension's registration status.
-    /// Line format we look for:
+    /// Query pluginkit for this extension's registration status.
+    /// Line format to look for:
     ///   `+    net.aerialscreensaver.AppexSaverMinimal.Extension(1.0) <path>`
     private func queryPluginKit() async throws -> (Bool, String?, String?) {
         let output = try runProcess("/usr/bin/pluginkit", arguments: ["-m", "-v", "-p", "com.apple.screensaver"])
@@ -161,23 +163,23 @@ class PluginManager: ObservableObject {
         }
     }
 
-    /// Check if our screensaver is the active screensaver on any display.
+    /// Check if this screensaver is the active screensaver on any display.
     func checkScreensaverStatus() {
         isCheckingScreensaver = true
         screensaverError = nil
 
         let activeScreensavers = paperSaver.getActiveScreensavers()
-        isActiveScreensaver = activeScreensavers.contains(screensaverDisplayName)
+        isActiveScreensaver = activeScreensavers.contains(paperSaverModuleName)
         isCheckingScreensaver = false
     }
 
-    /// Enable our screensaver as the active screensaver on every display.
+    /// Enable this screensaver as the active screensaver on every display.
     func enableAsScreensaver() async {
         isCheckingScreensaver = true
         screensaverError = nil
 
         do {
-            try await paperSaver.setScreensaverEverywhere(module: screensaverDisplayName)
+            try await paperSaver.setScreensaverEverywhere(module: paperSaverModuleName)
             checkScreensaverStatus()
         } catch {
             screensaverError = error.localizedDescription

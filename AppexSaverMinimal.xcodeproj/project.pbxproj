@@ -15,6 +15,8 @@
 		1A000006000000000000000A /* ScreenSaver.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1A000006000000000000000B /* ScreenSaver.framework */; };
 		1A000007000000000000000A /* AppexSaverMinimalExtension.appex in Embed PlugIns */ = {isa = PBXBuildFile; fileRef = 1A000007000000000000000B /* AppexSaverMinimalExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1A000030000000000000000A /* AppexSaverMinimalConfigurationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000030000000000000000B /* AppexSaverMinimalConfigurationViewController.swift */; };
+		1A000080000000000000000A /* AppexSaverSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000080000000000000000B /* AppexSaverSettings.swift */; };
+		1A000081000000000000000A /* AppexDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000081000000000000000B /* AppexDiagnostics.swift */; };
 		1A000031000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A000031000000000000000B /* Assets.xcassets */; };
 		1A000032000000000000000A /* PluginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000032000000000000000B /* PluginManager.swift */; };
 		1A000060000000000000000A /* RainbowAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000060000000000000000B /* RainbowAnimator.swift */; };
@@ -66,6 +68,8 @@
 		1A00000F000000000000000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A000011000000000000000B /* AppexSaverMinimalExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppexSaverMinimalExtension.entitlements; sourceTree = "<group>"; };
 		1A000030000000000000000B /* AppexSaverMinimalConfigurationViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppexSaverMinimalConfigurationViewController.swift; sourceTree = "<group>"; };
+		1A000080000000000000000B /* AppexSaverSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppexSaverSettings.swift; sourceTree = "<group>"; };
+		1A000081000000000000000B /* AppexDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppexDiagnostics.swift; sourceTree = "<group>"; };
 		1A000031000000000000000B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A000032000000000000000B /* PluginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginManager.swift; sourceTree = "<group>"; };
 		1A000050000000000000000B /* BuildNumber.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = BuildNumber.xcconfig; sourceTree = "<group>"; };
@@ -138,6 +142,8 @@
 				1A000004000000000000000B /* AppexSaverMinimalViewController.swift */,
 				1A000005000000000000000B /* AppexSaverMinimalView.swift */,
 				1A000030000000000000000B /* AppexSaverMinimalConfigurationViewController.swift */,
+				1A000080000000000000000B /* AppexSaverSettings.swift */,
+				1A000082000000000000000C /* Diagnostics */,
 				1A000031000000000000000B /* Assets.xcassets */,
 				1A00000E000000000000000B /* AppexSaverMinimalExtension-Bridging-Header.h */,
 				1A00000F000000000000000B /* Info.plist */,
@@ -161,6 +167,14 @@
 				1A000007000000000000000B /* AppexSaverMinimalExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		1A000082000000000000000C /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				1A000081000000000000000B /* AppexDiagnostics.swift */,
+			);
+			path = Diagnostics;
 			sourceTree = "<group>";
 		};
 		1A000019000000000000000C /* PrivateHeaders */ = {
@@ -316,6 +330,8 @@
 				1A000004000000000000000A /* AppexSaverMinimalViewController.swift in Sources */,
 				1A000005000000000000000A /* AppexSaverMinimalView.swift in Sources */,
 				1A000030000000000000000A /* AppexSaverMinimalConfigurationViewController.swift in Sources */,
+				1A000080000000000000000A /* AppexSaverSettings.swift in Sources */,
+				1A000081000000000000000A /* AppexDiagnostics.swift in Sources */,
 				1A000067000000000000000A /* Logger.swift in Sources */,
 				1A000061000000000000000A /* RainbowAnimator.swift in Sources */,
 			);
@@ -513,8 +529,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
-				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -550,8 +566,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
-				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;

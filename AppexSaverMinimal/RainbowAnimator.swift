@@ -6,11 +6,12 @@
 //
 //  Six-color fallback animation modeled on the Aerial screensaver's fallback
 //  view. Cross-fades a CALayer's backgroundColor through the six hues of the
-//  1977 Apple rainbow logo with a 2-second CABasicAnimation, holding each color
-//  for one second before transitioning to the next.
+//  1977 Apple rainbow logo. `interval` sets the time between colours (3 s by
+//  default) and the cross-fade takes two thirds of it, at most 2 s.
 //
-//  Shared between AppexSaverMinimalView (the appex extension) and PreviewView
-//  (the host app preview window) so the two render identically.
+//  Shared between AppexSaverMinimalView (the app extension) and PreviewView
+//  (the host app preview window) so the two render identically. The extension
+//  drives `interval` and `showsLabel` from its settings.
 //
 
 import AppKit
@@ -28,8 +29,22 @@ final class RainbowAnimator {
         NSColor(red: 0x00/255.0, green: 0x9D/255.0, blue: 0xDC/255.0, alpha: 1.0)  // blue
     ]
 
-    private let interval: TimeInterval = 3.0
-    private let fadeDuration: TimeInterval = 2.0
+    /// Seconds between two colours. Changing it while running restarts the timer.
+    var interval: TimeInterval = 3.0 {
+        didSet {
+            guard interval != oldValue, timer != nil else { return }
+            stop()
+            start()
+        }
+    }
+
+    /// Whether the version label is drawn over the colours.
+    var showsLabel: Bool = true {
+        didSet { labelLayer?.isHidden = !showsLabel }
+    }
+
+    /// Two thirds of the interval, capped at 2 s, so Fast (1 s) still shows distinct colours.
+    private var fadeDuration: TimeInterval { min(2.0, interval * 0.66) }
 
     private weak var parentLayer: CALayer?
     private var labelLayer: CATextLayer?
@@ -87,6 +102,7 @@ final class RainbowAnimator {
         text.string = "AppexSaverMinimal · v\(version) (\(build))"
         text.font = NSFont.systemFont(ofSize: 22, weight: .medium)
         text.fontSize = 22
+        text.isHidden = !showsLabel
         text.foregroundColor = NSColor.white.cgColor
         text.alignmentMode = .center
         text.shadowColor = NSColor.black.cgColor

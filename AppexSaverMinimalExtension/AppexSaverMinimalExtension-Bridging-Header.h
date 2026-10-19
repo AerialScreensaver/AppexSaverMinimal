@@ -1,8 +1,8 @@
 //
-//  AppexSaverExtension-Bridging-Header.h
-//  AppexSaverExtension
+//  AppexSaverMinimalExtension-Bridging-Header.h
+//  AppexSaverMinimalExtension
 //
-//  Bridging header to expose private ScreenSaver API to Swift.
+//  Exposes the ScreenSaver framework's undeclared classes to Swift.
 //
 
 #import "PrivateHeaders/ScreenSaverPrivate.h"

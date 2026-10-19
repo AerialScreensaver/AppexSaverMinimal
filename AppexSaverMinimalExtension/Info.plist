@@ -31,6 +31,8 @@
 		<key>NSExtensionPrincipalClass</key>
 		<string>$(PRODUCT_MODULE_NAME).AppexSaverMinimalExtension</string>
 	</dict>
+	<key>NSExtensionContextClass</key>
+	<string>ScreenSaverExtensionContext</string>
 	<key>SSEHasConfigureSheet</key>
 	<true/>
 	<key>SSENeedsAnimationTimer</key>

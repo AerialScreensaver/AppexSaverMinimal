@@ -1,284 +1,104 @@
-# macOS Appex Screensaver — Technical Background
+# macOS app-extension screensavers — technical background
 
-This document captures what's known about developing screensavers for macOS Sonoma and later using the modern ExtensionKit (`.appex`) format. It is meant as a companion to the sample code in this repository.
-
----
+Condensed reference behind the four-part series on the Aerial website (see [README](README.md#documentation)). Everything marked *measured* was observed with this sample's Debug diagnostics on macOS 27.2 (build 26B5112a) with Xcode 27 on 2026-10-18; Apple has not documented this extension point for third-party developers, and any of it can change in a macOS release.
 
 ## 1. Architecture
 
-### `.appex` vs. legacy `.saver`
-
-Modern macOS (Sonoma+) supports screensavers packaged as ExtensionKit `.appex` bundles in addition to the legacy `.saver` plug-in format. Apple's own first-party savers (Hello, Arabesque, Drift, Monterey, Ventura, Shell, Flurry) all use the appex format.
+Apple has been moving the screensavers that ship with macOS from `.saver` plug-ins to **app extensions** since macOS 10.15, and on macOS 27 all but two are app extensions: sandboxed `.appex` bundles, declared with the classic `NSExtension` dictionary, embedded in an app and hosted as **view services** (their views reach the host through ViewBridge remote views). They are not ExtensionKit extensions, although Apple's live in `/System/Library/ExtensionKit/Extensions/`. Legacy `.saver` bundles still work; macOS runs them inside `legacyScreenSaver.appex`, found in `ScreenSaver.framework/PlugIns/`.
 
 | | `.appex` | `.saver` |
 |---|---|---|
-| **Bundle type** | `CFBundlePackageType = XPC!` | `CFBundlePackageType = BNDL` |
-| **Process model** | Separate sandboxed XPC process | Loaded into `legacyScreenSaver.appex` |
-| **Framework** | `ScreenSaver.framework` + ExtensionKit | `ScreenSaver.framework` |
-| **Min macOS** | 14.0 (Sonoma) | All supported macOS |
-| **Distribution** | Embedded inside a host `.app`, registered via `pluginkit` | Standalone `.saver` file |
+| Bundle type | `CFBundlePackageType = XPC!` | `BNDL` |
+| Process model | One sandboxed process per host | Loaded into `legacyScreenSaver.appex` |
+| Declaration | `NSExtension` dictionary + root `SSE*`/`ScreenSaver*` keys | `NSPrincipalClass` |
+| Distribution | Embedded in a host `.app`, registered by PlugInKit | Standalone bundle in a Screen Savers folder |
 
-### Extension Point
+The extension point is defined in `/System/Library/Frameworks/ScreenSaver.framework/Resources/Info.plist` under `NSExtensionSDK`:
 
-- **Identifier:** `com.apple.screensaver`
-- **Version:** `1.0`
+- `NSExtensionPointName = com.apple.screensaver`, version `1.0`
+- `NSExtensionProtocol = ScreenSaverExtension`
+- `NSExtensionContextClass = ScreenSaverExtensionContext`, `NSExtensionContextHostClass = ScreenSaverHostExtensionContext`
+- `NSExtensionHostEntitlement = com.apple.developer.extension-host.screensaver`
+- subsystems `NSViewService_PKSubsystem`, `NSSharingService_Subsystem`; XPCService with `viewbridge`
 
-### Process Isolation
+## 2. Hosts (measured)
 
-Each appex screensaver runs in its own sandboxed process. The framework handles all inter-process communication via XPC; you don't write XPC code yourself. View rendering, input events, and lifecycle messages all flow through the framework transparently.
+Selecting the screensaver in System Settings starts **two instances** of the extension at once (also seen on macOS 26 with Aerial):
 
----
+- **System Settings' Wallpaper pane** (`Wallpaper.appex`, `com.apple.Wallpaper-Settings.extension`; on macOS 26+ the screensaver settings are in the Wallpaper pane) hosts the first. That instance gets a view controller whose window is never sized (0×0 for its lifetime) and hosts the configuration sheet. Its `ScreenSaverExtensionManager.isPreview` is true. It receives `SIGTERM` about 30 s after the pane is left.
+- **The Wallpaper agent** (`WallpaperAgent`) starts a second instance that renders the screensaver as the desktop picture (windows at level −2147483625, one per display) and keeps it across activations. The screensaver proper is those windows with the lock UI on top. The pane's live preview is this instance's full-size render, scaled.
+- **`ScreenSaverEngine.app`** is a thin launcher: `open -a ScreenSaverEngine` calls `SACScreenSaverStartNow` and the Wallpaper agent does the work ("Take Assertion … contentType: screenSaver", `WallpaperScreenSaverWindow`).
 
-## 2. Class Hierarchy
+Activity Monitor labels the instances "AppexSaverMinimal (Wallpaper (System Settings))" and "AppexSaverMinimal (Wallpaper)". `NSApp` is `NSViewServiceApplication`; the process's home is the extension's container.
 
-### Public API (`ScreenSaver.framework`)
+## 3. Classes
 
-| Class | Purpose |
-|-------|---------|
-| `ScreenSaverView` | Your main view. NSView subclass with `animateOneFrame()`, `startAnimation()`, `stopAnimation()`, `draw(_:)`. |
-| `ScreenSaverDefaults` | `UserDefaults` subclass for screensaver preferences. |
+`ScreenSaver.framework`'s public headers declare only `ScreenSaverView` and `ScreenSaverDefaults`. The SDK's `ScreenSaver.tbd` exports the classes below (and more); declarations are in `PrivateHeaders/ScreenSaverPrivate.h`.
 
-### ExtensionKit classes used by appex screensavers
+| Class | Role | Read from the runtime (measured) |
+|---|---|---|
+| `ScreenSaverExtension : NSObject` | Principal class (`NSExtensionPrincipalClass`). Instantiated per request and released; keep it stateless. | `beginRequestWithExtensionContext:` |
+| `ScreenSaverViewController : NSServiceViewController` | Provides the view (`ScreenSaverViewControllerClass`). Override `loadView()` only. | `startAnimation`, `stopAnimation`, `invalidate`, `awakeFromRemoteView`, `remoteViewSizeChanged:transaction:` (BOOL, `(NSSize, id)`), properties `initialAnimationState`, `didFirstResize` |
+| `ScreenSaverConfigurationViewController : NSServiceViewController` | Options sheet (`ScreenSaverConfigurationSheetViewControllerClass`). | `configureSheetWillPresent`, `configureSheetDidEnd`, `extensionContext` |
+| `ScreenSaverExtensionContext : NSExtensionContext` | Context class (`NSExtensionContextClass`). | `+_extensionAuxiliaryHostProtocol`, `+_extensionAuxiliaryVendorProtocol` |
+| `ScreenSaverExtensionManager` | Service-side manager (`+sharedManager`). | `isPreview`, `isAnimating`, `viewControllers`, `bundleIdentifier`, `processExtensionRequest:replyInfo:` |
 
-These are still partly underdocumented; their declarations live in `AppexSaverMinimalExtension/PrivateHeaders/ScreenSaverPrivate.h` in this repo. On recent SDKs the symbols are also available without the bridging header.
+`loadViewForFrame:isPreview:` belongs to the host-side `ScreenSaverModule` / `ScreenSaverExtensionModule`, not to the view controller.
 
-| Class | Purpose |
-|-------|---------|
-| `ScreenSaverExtension` | Principal class. Set as `NSExtensionPrincipalClass` in Info.plist. |
-| `ScreenSaverViewController` | View controller managing the screensaver view. Set as `ScreenSaverViewControllerClass` in Info.plist. |
-| `ScreenSaverConfigurationViewController` | Base class for the optional configuration sheet. |
+## 4. Info.plist keys
 
----
+Inside `NSExtension`: `NSExtensionPointIdentifier = com.apple.screensaver`, `NSExtensionPointVersion = 1.0`, `NSExtensionPrincipalClass = $(PRODUCT_MODULE_NAME).YourExtension`.
 
-## 3. Info.plist Configuration
+Root level:
 
-### `NSExtension` dictionary
+| Key | Type | Meaning |
+|---|---|---|
+| `NSExtensionContextClass` | String | `ScreenSaverExtensionContext`. Without it a host that opens an auxiliary connection crashes the extension before the principal class runs (Aerial 4.0.14, macOS 14/15). 8 of Apple's 12 savers declare it. |
+| `ScreenSaverViewControllerClass` | String | The `ScreenSaverViewController` subclass. |
+| `SSEHasConfigureSheet` | Boolean | Shows the Options button. |
+| `ScreenSaverConfigurationSheetViewControllerClass` | String | The `ScreenSaverConfigurationViewController` subclass. |
+| `SSENeedsAnimationTimer` | Boolean | `true`: the host calls `animateOneFrame()` every `animationTimeInterval` (measured 60/s per view at 1/60; default interval 1/30). `false`: called once at start. `startAnimation` arrives either way; `stopAnimation` is not sent to the views the host releases (§5). |
+| `ScreenSaverConfigurationViewControllerClass`, `ScreenSaverExtensionManagerClass` | String | Seen in the framework and in `legacyScreenSaver`; not needed by a normal screensaver. |
 
-```xml
-<key>NSExtension</key>
-<dict>
-    <key>NSExtensionPointIdentifier</key>
-    <string>com.apple.screensaver</string>
-    <key>NSExtensionPointVersion</key>
-    <string>1.0</string>
-    <key>NSExtensionPrincipalClass</key>
-    <string>$(PRODUCT_MODULE_NAME).YourScreenSaverExtension</string>
-</dict>
-```
+Apple's savers on macOS 27.2 (`SSENeedsAnimationTimer` / `SSEHasConfigureSheet` / `NSExtensionContextClass`): Album Artwork false/true/yes · Arabesque true/false/no · Computer Name true/true/yes · Drift false/true/yes · Flurry true/true/yes · Hello false/true/yes · iLifeSlideshows false/true/yes · Monterey false/false/yes · Shell true/false/no · Ventura false/false/yes · Word of the Day true/true/no.
 
-### Root-level screensaver keys
+## 5. Lifecycle (measured)
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `ScreenSaverViewControllerClass` | String | Fully-qualified name of the main view controller. |
-| `ScreenSaverConfigurationSheetViewControllerClass` | String | Fully-qualified name of the configuration sheet controller. |
-| `SSEHasConfigureSheet` | Boolean | Whether the screensaver has a configuration UI. |
-| `SSENeedsAnimationTimer` | Boolean | Whether the framework should drive a per-frame animation timer (see §5). |
+One activation on two displays, agent-hosted instance: `loadView()` per display → `viewDidMoveToWindow()` with a 0×0 window at the main display's origin → `remoteViewSizeChanged(_:transaction:)` 15–25 ms later with the display size (second window moved to its display) → `startAnimation()` per view (+ one `animateOneFrame()` with the timer off) → … → distributed `com.apple.screensaver.willstop`, `didstop` → view controllers and views released ≈400 ms later **without `stopAnimation()`** (each view gets `viewDidMoveToWindow()` with a nil window, then `deinit`); the `stopAnimation()` calls that do arrive go to views the instance keeps, and kept views get `startAnimation()` again when a session starts. The process stays alive across activations; the principal class is created/released around every request (eleven pairs in one activation).
 
-Use `$(PRODUCT_MODULE_NAME).ClassName` so the module prefix tracks your target name automatically.
+Notifications received: `com.apple.screensaver.didstart` (object `runFromPref` when started from the pane's Preview), `com.apple.screenIsLocked` (≈150 ms after `didstart`), `willstop`, `didstop`, `com.apple.screenLockUIIsHidden`, `com.apple.screenIsUnlocked`; Control-Command-Q delivers `screenIsLocked` + `screenLockUIIsShown`. The agent keeps the process after it releases the views and reuses it for the next session (one process served 19 view controllers over two minutes); only the pane's instance received `SIGTERM`. Keep per-session state in the view, stop timers when the view leaves its window, re-read settings per view, persist as you go. Ending the Options sheet makes the agent recreate its view (the preview restarts; Apple's Hello does the same). No key focus.
 
----
+On macOS 14/15 (Aerial 4.0): windows were placed on the main display and migrated 30–200 ms later (`NSWindow.didChangeScreenNotification`; `window.screen` reliable at settle), and `startAnimation`/`stopAnimation` were not reliably delivered — drive from `viewDidMoveToWindow()` as well.
 
-## 4. Apple's Built-in Screensavers (Reference)
+## 6. Rendering
 
-Located in `/System/Library/ExtensionKit/Extensions/`.
-
-| Name | Principal Class | View Controller | Has Config |
-|------|-----------------|-----------------|------------|
-| Arabesque | `Arabesque.ArabesqueExtension` | `ArabesqueViewController` | No |
-| Flurry | `Flurry.FlurryExtension` | `FlurryViewController` | Yes |
-| Drift | `Drift.FlowExtension` | `FlowViewController` | Yes |
-| Hello | `Hello.HelloExtension` | `HelloViewController` | Yes |
-| Monterey | `Monterey.CanyonExtension` | `CanyonViewController` | No |
-| Ventura | `Ventura.PetalExtension` | `PetalViewController` | No |
-| Shell | `Shell.ShellExtension` | `ShellViewController` | No |
+- **Core Animation / own timer** (this sample): `SSENeedsAnimationTimer = false`, start and stop from `viewDidMoveToWindow()`; `startAnimation()` as a second, idempotent start trigger; never rely on `stopAnimation()`.
+- **Per-frame drawing**: `SSENeedsAnimationTimer = true`, set `animationTimeInterval`, override `animateOneFrame()`/`draw(_:)`.
+- **SwiftUI**: add an `NSHostingView` as a subview of the `ScreenSaverView`.
 
-**Naming conventions** Apple uses:
+`isPreview` is not conveyed to the extension; create the view with `frame: .zero, isPreview: false` and an autoresizing mask, like Apple's savers. The only preview-ish instance (System Settings') never gets a sized window.
 
-- Principal class: `Module.ModuleExtension` (e.g. `Arabesque.ArabesqueExtension`)
-- View controller: `ModuleViewController`
-- View class: `Module.ModuleView`
-
----
-
-## 5. Rendering: three valid approaches
-
-There is no single "right" way to render an appex screensaver. Pick whichever fits your animation model.
+## 7. Configuration sheet and settings (measured)
 
-### A. Direct CALayer animation (what this sample uses)
+- Subclass `ScreenSaverConfigurationViewController`; set `preferredContentSize`; refresh controls in `configureSheetWillPresent()`; end the sheet with `configureSheetDidEnd()`. `dismiss(_:)`/`sheetParent` do not work from a remote view (the sheet stays with an empty area and the next click raises an uncaught exception that terminates the extension).
+- Store with `ScreenSaverDefaults(forModuleWithName: <bundle identifier>)` → `~/Library/Containers/<bundle id>/Data/Library/Preferences/ByHost/<bundle id>.<hardware UUID>.plist`. Inside the sandbox only the extension's own domain is writable.
+- Cross-process updates: `UserDefaults.didChangeNotification` is in-process only; KVO on the defaults object fires in the other instance within milliseconds, but the cached value there is stale until `synchronize()` is called; the plist on disk is written later still. Re-read (`synchronize()`) before applying.
 
-Manipulate the backing CALayer directly — either with `CABasicAnimation` (Aerial's fallback and this sample's `RainbowAnimator`) or with your own `Timer` updating layer properties. Set `SSENeedsAnimationTimer = false` because the layer or your timer drives frames itself.
+## 8. Registration and discovery
 
-```swift
-class YourScreenSaverView: ScreenSaverView {
-    override init?(frame: NSRect, isPreview: Bool) {
-        super.init(frame: frame, isPreview: isPreview)
-        wantsLayer = true
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard let layer = self.layer, window != nil else { return }
-        let animation = CABasicAnimation(keyPath: "backgroundColor")
-        animation.fromValue = NSColor.red.cgColor
-        animation.toValue = NSColor.blue.cgColor
-        animation.duration = 2.0
-        animation.autoreverses = true
-        animation.repeatCount = .infinity
-        layer.add(animation, forKey: "demo")
-    }
-}
-```
-
-### B. Traditional `ScreenSaverView` overrides
-
-Override `startAnimation()`, `stopAnimation()`, `animateOneFrame()`, and `draw(_:)`. These **do** get called by the framework when `SSENeedsAnimationTimer = true`; they're the same calls a `.saver` plug-in would receive.
-
-```swift
-class YourScreenSaverView: ScreenSaverView {
-    override init?(frame: NSRect, isPreview: Bool) {
-        super.init(frame: frame, isPreview: isPreview)
-        animationTimeInterval = 1.0 / 30.0
-    }
-
-    override func animateOneFrame() {
-        super.animateOneFrame()
-        // Update model state, then trigger a redraw:
-        setNeedsDisplay(bounds)
-    }
-
-    override func draw(_ rect: NSRect) {
-        NSColor.black.setFill()
-        bounds.fill()
-        // ...your drawing here...
-    }
-}
-```
-
-### C. SwiftUI via `NSHostingView`
-
-You can host SwiftUI inside an appex screensaver by wrapping your SwiftUI root view in `NSHostingView` and adding it as a subview of the `ScreenSaverView`. The [Aerial](https://github.com/AerialScreensaver/Aerial) screensaver uses this pattern for weather, music, and clock overlays painted on top of its video player.
-
-```swift
-import SwiftUI
-
-class YourScreenSaverView: ScreenSaverView {
-    private var hosting: NSHostingView<YourSwiftUIView>?
-
-    override init?(frame: NSRect, isPreview: Bool) {
-        super.init(frame: frame, isPreview: isPreview)
-        wantsLayer = true
-
-        let host = NSHostingView(rootView: YourSwiftUIView())
-        host.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(host)
-        NSLayoutConstraint.activate([
-            host.leadingAnchor.constraint(equalTo: leadingAnchor),
-            host.trailingAnchor.constraint(equalTo: trailingAnchor),
-            host.topAnchor.constraint(equalTo: topAnchor),
-            host.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-        hosting = host
-    }
-}
-```
-
-Note that SwiftUI is hosted *inside* the `ScreenSaverView`; it is not the principal class. The principal class must still be a `ScreenSaverExtension` subclass.
-
-### View controller setup
-
-The view controller overrides `loadView()` to instantiate and assign the screensaver view:
-
-```swift
-@objc(YourViewController)
-class YourViewController: ScreenSaverViewController {
-    override func loadView() {
-        let frame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
-        let isPreview = frame.width < 400
-        self.view = YourScreenSaverView(frame: frame, isPreview: isPreview)
-            ?? NSView(frame: frame)
-    }
-}
-```
-
----
-
-## 6. Registration and Discovery
-
-### Using `pluginkit`
-
-```bash
-# Register an appex
-pluginkit -a /path/to/YourScreensaver.app/Contents/PlugIns/YourScreensaver.appex
-
-# List all registered screensavers
-pluginkit -m -v -p com.apple.screensaver
-
-# Unregister
-pluginkit -r /path/to/YourScreensaver.appex
-```
-
-In production the appex must be embedded inside an application bundle:
-
-```
-YourApp.app/Contents/PlugIns/YourScreensaver.appex
-```
-
-You typically ship the host app to `/Applications/`, and macOS picks the appex up automatically (or your host app calls `pluginkit -a` on first launch, as this sample does in `PluginManager.swift`).
-
----
-
-## 7. Thumbnails
-
-### Required dimensions
-
-System Settings displays screensaver thumbnails at a specific landscape aspect ratio. Square images won't appear.
-
-| Scale | Dimensions |
-|-------|------------|
-| 1x | 107 × 65 |
-| 2x | 214 × 130 |
-
-### Asset catalog setup
-
-Place thumbnails in an asset catalog imageset named `thumbnail`:
-
-```
-Assets.xcassets/
-└── thumbnail.imageset/
-    ├── Contents.json
-    ├── thumbnail.png      (107 × 65)
-    └── thumbnail@2x.png   (214 × 130)
-```
-
-`Contents.json`:
-
-```json
-{
-  "images": [
-    { "filename": "thumbnail.png",    "idiom": "universal", "scale": "1x" },
-    { "filename": "thumbnail@2x.png", "idiom": "universal", "scale": "2x" }
-  ],
-  "info": { "author": "xcode", "version": 1 }
-}
-```
-
-Some Apple screensavers ship both explicit PNGs in `Resources/` and entries inside the compiled `Assets.car`; the explicit PNGs appear to take priority when present.
-
-### Caching
-
-macOS caches screensaver thumbnails aggressively. If yours doesn't appear after changes:
-
-1. Rebuild and re-register: `pluginkit -a /path/to/Extension.appex`
-2. Close and reopen System Settings
-3. Log out and back in if the cached version persists
-
----
+PlugInKit (`pkd`) scans `/Applications` and launched apps; `pluginkit -a <appex>` registers any path (the sample's "Register Extensions" build phase does it on every build; needs `ENABLE_USER_SCRIPT_SANDBOXING = NO`); `pluginkit -r` removes; `pluginkit -m -v -p com.apple.screensaver` lists (`-D` all copies, `-A` all versions, `-i <id>` by identifier). Election marks: `+` use, `-` ignore, `!` debugger, `=` superseded, `?` unknown. Duplicate registrations make the system load an unexpected copy (black screensaver, no view controller); log the loaded bundle path. After a rebuild, `killall WallpaperAgent` (it restarts on its own and relaunches the extension) and reopen System Settings. PaperSaver identifies an appex saver by the `.appex` file stem.
+
+## 9. Thumbnails
+
+Asset-catalog image set `thumbnail`, 107×65 @1x and 214×130 @2x, landscape. Apple's savers ship theirs in `Assets.car` with `CFBundleIconFile`. System Settings caches thumbnails for days (through restarts); no cache file was identified. Verify a new thumbnail on a VM or a second Mac rather than on the development machine.
+
+## 10. Entitlements (measured)
+
+Sample: `com.apple.security.app-sandbox` plus mach-lookup exceptions `com.apple.CARenderServer` and `com.apple.CoreDisplay.master`, the two Apple's Flurry/Hello carry (they also carry `com.apple.nsurlstorage-cache`; none carries a library-validation exception or a ViewBridge lookup). On macOS 27.2 the sample rendered with the sandbox entitlement alone; the lookups stay for macOS 14/15. The extension is not hardened (the host app is), so `disable-library-validation` on the extension was a no-op and is gone, as are the network entitlements Xcode added from build settings. Read the signed set with `codesign -d --entitlements :- <appex>`.
 
 ## References
 
-- `ScreenSaver.framework` headers in the macOS SDK
-- Apple's built-in screensaver extensions at `/System/Library/ExtensionKit/Extensions/`
-- ExtensionKit documentation in the Xcode SDK
-- [Aerial](https://github.com/AerialScreensaver/Aerial) — full appex screensaver using approaches A and C together
-- [ScreenSaverMinimal](https://github.com/AerialScreensaver/ScreenSaverMinimal) — same author's sample for the legacy `.saver` format
+- `ScreenSaver.framework` SDK headers and `ScreenSaver.tbd`
+- `/System/Library/ExtensionKit/Extensions/*.appex` (Apple's screensavers)
+- `/System/Library/Frameworks/ScreenSaver.framework/Resources/Info.plist` (the extension-point definition)
+- [Aerial](https://github.com/AerialScreensaver/Aerial), [ScreenSaverMinimal](https://github.com/AerialScreensaver/ScreenSaverMinimal), [PaperSaver](https://github.com/AerialScreensaver/PaperSaver)

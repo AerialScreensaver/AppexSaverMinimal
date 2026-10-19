@@ -4,13 +4,13 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<key>com.apple.security.cs.disable-library-validation</key>
-	<true/>
+	<!-- Apple's own screensavers carry these two lookups. On macOS 27.2 the
+	     sample renders without them; they stay for the macOS 14 and 15
+	     releases the sample also targets. -->
 	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
 	<array>
 		<string>com.apple.CARenderServer</string>
 		<string>com.apple.CoreDisplay.master</string>
-		<string>com.apple.ViewBridgeAuxiliary</string>
 	</array>
 </dict>
 </plist>
